@@ -8,24 +8,23 @@ const fs = require("fs");
 
 const app = express();
 const router = express.Router();
-
 app.use(cors());
 app.use(bodyParser.json());
 
-// 🛠 Netlify Lambda ไม่เก็บไฟล์ถาวร ให้ใช้ path ชั่วคราว
+// 🛠 Netlify Lambda ไม่เก็บไฟล์ถาวร ต้องสร้าง database.db ใหม่ทุกครั้ง
 const dbPath = path.join("/tmp", "database.db");
 
-// 🔹 เช็คว่ามีไฟล์ database.db หรือไม่ ถ้าไม่มีให้สร้างใหม่
+// 🛠 ตรวจสอบว่าไฟล์ Database มีอยู่หรือไม่
 if (!fs.existsSync(dbPath)) {
   console.log("⚠️ Database file not found, creating a new one...");
 
-  // ✅ คัดลอกไฟล์ `database.db` จาก `process.cwd()`
+  // ✅ คัดลอก database.db จากโปรเจ็กต์ไปที่ /tmp/
   const sourceDbPath = path.join(process.cwd(), "database.db");
   if (fs.existsSync(sourceDbPath)) {
     fs.copyFileSync(sourceDbPath, dbPath);
     console.log("✅ Copied database file to /tmp/");
   } else {
-    console.log("❌ Database file missing. Creating a new one...");
+    console.log("❌ No source database found. Creating an empty database...");
     fs.writeFileSync(dbPath, "");
   }
 }
@@ -36,19 +35,25 @@ const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
     console.error("❌ Database connection error:", err.message);
   } else {
     console.log("✅ Connected to SQLite database at", dbPath);
+
+    // ✅ **สร้างตารางใหม่ถ้ายังไม่มี**
+    db.run(`
+      CREATE TABLE IF NOT EXISTS plates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plate TEXT NOT NULL,
+        total INTEGER,
+        price TEXT NOT NULL,
+        status TEXT NOT NULL
+      )
+    `, (err) => {
+      if (err) {
+        console.error("❌ Error creating table:", err.message);
+      } else {
+        console.log("✅ Table 'plates' is ready");
+      }
+    });
   }
 });
-
-// ✅ สร้างตารางถ้ายังไม่มี (เฉพาะครั้งแรก)
-db.run(`
-  CREATE TABLE IF NOT EXISTS plates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    plate TEXT NOT NULL,
-    total INTEGER,
-    price TEXT NOT NULL,
-    status TEXT NOT NULL
-  )
-`);
 
 // ✅ API ดึงข้อมูลทั้งหมด
 router.get("/plates", (req, res) => {
@@ -73,6 +78,31 @@ router.post("/addPlate", (req, res) => {
       return res.status(500).json({ error: err.message });
     }
     res.json({ id: this.lastID, plate, total, price, status });
+  });
+});
+
+// ✅ API อัปเดตสถานะ
+router.put("/updateStatus/:id", (req, res) => {
+  const { status } = req.body;
+  const { id } = req.params;
+
+  db.run(`UPDATE plates SET status = ? WHERE id = ?`, [status, id], function (err) {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.json({ message: "อัปเดตสถานะเรียบร้อย", id, status });
+  });
+});
+
+// ✅ API ลบทะเบียน
+router.delete("/deletePlate/:id", (req, res) => {
+  const { id } = req.params;
+
+  db.run(`DELETE FROM plates WHERE id = ?`, id, function (err) {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.json({ message: "ลบทะเบียนเรียบร้อย", id });
   });
 });
 
