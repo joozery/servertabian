@@ -1,0 +1,8 @@
+[build]
+  command = "npm install"
+  publish = "."  # เปลี่ยนจาก "dist" เป็นจุด (.)
+  functions = "netlify/functions"
+
+[dev]
+  command = "npm start"
+  port = 8888
